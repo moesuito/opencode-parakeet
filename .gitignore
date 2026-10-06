@@ -1,0 +1,8 @@
+# third-party binaries and models (not part of this repo)
+*.gguf
+*.bin
+parakeet-server
+parakeet-server.exe
+parakeet-cli
+parakeet-cli.exe
+*.zip
