@@ -1,49 +1,81 @@
 # opencode-parakeet
 
-Local, OpenAI-compatible speech-to-text for [OpenCode](https://github.com/anomalyco/opencode) voice input — powered by NVIDIA **Parakeet TDT 0.6B v3** via [parakeet.cpp](https://github.com/mudler/parakeet.cpp) (GGML + Vulkan). Everything runs on your machine: no cloud, no API keys, very low latency.
+Local, OpenAI-compatible speech-to-text for [OpenCode](https://github.com/anomalyco/opencode) voice input — powered by NVIDIA **Parakeet TDT 0.6B v3** via [parakeet.cpp](https://github.com/mudler/parakeet.cpp) (GGML + Vulkan/CPU). Everything runs on your machine: no cloud, no API keys, very low latency.
 
 > Setup used to test [feat: voice input for the terminal and web clients (opencode#53492)](https://github.com/anomalyco/opencode/pull/53492).
 
-## Why
-
-OpenCode can dictate (TUI `Ctrl+Y`, mic button in the web/desktop composer) by POSTing recordings to any OpenAI-compatible `audio/transcriptions` endpoint. Pointing that at a local Parakeet server gives you fast, private dictation:
+[![release](https://img.shields.io/github/v/release/moesuito/opencode-parakeet)](https://github.com/moesuito/opencode-parakeet/releases) [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 | Audio | Transcribe time | Hardware |
 | ----- | --------------- | -------- |
 | 6.6 s | ~110 ms (~60× realtime) | AMD Radeon RX 9060 XT (Vulkan), Windows 11 |
 
-CPU-only builds work as well (slower).
+## Why
 
-## Quick start
+OpenCode can dictate (TUI `Ctrl+Y`, mic button in the web/desktop composer) by POSTing recordings to any OpenAI-compatible `audio/transcriptions` endpoint. Pointing that at a local Parakeet server gives you fast, private dictation.
 
-1. **Get parakeet.cpp** — grab a prebuilt release from [mudler/parakeet.cpp](https://github.com/mudler/parakeet.cpp) (e.g. `parakeet-v0.5.0-bin-win-vulkan-x64.zip` for Windows + Vulkan), or build from source.
-2. **Get a model** — from [mudler/parakeet-cpp-gguf](https://huggingface.co/mudler/parakeet-cpp-gguf):
-   - `tdt-0.6b-v3-f16.gguf` (~1.4 GB, best quality) — used here
-   - `tdt-0.6b-v3-q8_0.gguf` (~0.9 GB, smaller)
-3. **Run the server**:
+## Install (Windows)
 
-   ```powershell
-   .\parakeet-server.exe --model .\tdt-0.6b-v3-f16.gguf --port 8797
-   ```
+One command in PowerShell **5.1 or 7+** — downloads the server runtime, verifies its checksum, downloads a model from Hugging Face and generates a `serve.ps1` launcher:
 
-   or use `serve.ps1` (Windows) / `serve.sh` (Linux/macOS) from this repo.
+```powershell
+irm https://raw.githubusercontent.com/moesuito/opencode-parakeet/main/install.ps1 | iex
+```
 
-4. **Configure OpenCode** — add a `voice` block to your config:
-   - TUI: `~/.config/opencode/cli.json`
-   - web/desktop: `~/.config/opencode/opencode.json`
+Need options? Use a script block:
 
-   ```json
-   {
-     "voice": {
-       "url": "http://127.0.0.1:8797/v1/audio/transcriptions",
-       "model": "parakeet"
-     }
-   }
-   ```
+```powershell
+$s = irm https://raw.githubusercontent.com/moesuito/opencode-parakeet/main/install.ps1
+& ([scriptblock]::Create($s)) -Backend cpu -Model q8_0 -Configure
+```
 
-   `apiKey` is only needed for cloud endpoints. Voice input stays disabled until `url` is set.
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `-Backend vulkan\|cpu` | `vulkan` | GPU (Vulkan) or CPU-only build |
+| `-Model f16\|q8_0\|q6_k\|q5_k\|q4_k` | `f16` | Model size/quality/speed trade-off |
+| `-InstallDir <path>` | `%LOCALAPPDATA%\opencode-parakeet` | Where everything is installed |
+| `-Port <n>` | `8797` | Port used by the generated launcher |
+| `-Configure` | off | Adds the `voice` block to `~/.config/opencode/cli.json` and `opencode.json` (with backups) |
+| `-NoModel` / `-NoVerify` / `-Force` | — | Skip model download / skip checksums / reinstall |
 
-5. **Use it** — TUI: `Ctrl+Y` records, then send on stop; `Alt+Y` inserts the transcription without sending. Web: click the mic in the composer.
+The installer verifies the server's SHA256 against `SHA256SUMS` and the model's SHA256 against the hash advertised by Hugging Face; the model download resumes if interrupted.
+
+## Configure OpenCode
+
+Voice input stays disabled until `voice.url` is set. Add this to:
+
+- TUI: `~/.config/opencode/cli.json`
+- web/desktop: `~/.config/opencode/opencode.json`
+
+```json
+{
+  "voice": {
+    "url": "http://127.0.0.1:8797/v1/audio/transcriptions",
+    "model": "parakeet"
+  }
+}
+```
+
+`apiKey` is only needed for cloud endpoints. Or just re-run the installer with `-Configure`.
+
+## Run the server
+
+```powershell
+& "$env:LOCALAPPDATA\opencode-parakeet\serve.ps1"
+```
+
+Or manually, with any [parakeet.cpp](https://github.com/mudler/parakeet.cpp/releases) build (Linux/macOS too):
+
+```bash
+./parakeet-server --model ./tdt-0.6b-v3-f16.gguf --port 8797
+```
+
+`serve.sh` in this repo wraps that for Linux/macOS.
+
+## Use it
+
+- **TUI**: `Ctrl+Y` records, press again (or Enter) to stop and send; `Alt+Y` inserts the transcription without sending.
+- **Web/desktop**: click the mic in the composer; the composer's send button stops the recording, transcribes, appends it to what you already typed and sends.
 
 ## Test the server directly
 
@@ -54,17 +86,33 @@ curl http://127.0.0.1:8797/v1/audio/transcriptions \
 # {"text":"..."}
 ```
 
-Recordings should be WAV (16 kHz mono recommended). OpenCode's recorder already uploads in exactly this format.
+Recordings should be WAV (16 kHz mono recommended) — OpenCode's recorder already uploads in exactly this format.
+
+## Releases
+
+This repository mirrors the latest [parakeet.cpp](https://github.com/mudler/parakeet.cpp) release **with binaries**, pinned and checksummed:
+
+- `parakeet-server-win-x64-vulkan.zip` — GPU build (Vulkan)
+- `parakeet-server-win-x64-cpu.zip` — CPU-only build
+- `SHA256SUMS`
+
+Both are byte-identical to the corresponding upstream assets (currently parakeet.cpp v0.5.0). Other platforms/backends (Linux, macOS, CUDA): grab them from the [upstream releases](https://github.com/mudler/parakeet.cpp/releases).
+
+## Troubleshooting
+
+- **Server exits immediately on the Vulkan build** — your GPU/driver may not support Vulkan. Re-run the installer with `-Backend cpu`.
+- **Port already in use** — pass another port to `serve.ps1` (`-Port 8798`) and update `voice.url`.
+- **First request is slow** — the model is loaded into memory on first use.
 
 ## Notes
 
 - Works with any OpenAI-compatible transcription server (e.g. `whisper.cpp`'s `whisper-server`) — Parakeet is just very fast and light.
-- The server binary and model weights are third-party downloads; this repo only ships docs and helper scripts.
+- Third-party binaries and model weights are downloaded from their official sources; this repo only ships docs, scripts and checksummed mirrors.
 
 ## Credits
 
 - [mudler/parakeet.cpp](https://github.com/mudler/parakeet.cpp) — MIT, by the [LocalAI](https://github.com/mudler/LocalAI) team (ggml-based Parakeet inference).
-- NVIDIA [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) — model weights.
+- NVIDIA [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) — model weights ([GGUF builds](https://huggingface.co/mudler/parakeet-cpp-gguf)).
 
 ## License
 
