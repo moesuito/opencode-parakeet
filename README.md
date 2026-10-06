@@ -16,7 +16,7 @@ OpenCode can dictate (TUI `Ctrl+Y`, mic button in the web/desktop composer) by P
 
 ## Install (Windows)
 
-One command in PowerShell **5.1 or 7+** — downloads the server runtime, verifies its checksum, downloads a model from Hugging Face and generates a `serve.ps1` launcher:
+One command in PowerShell **5.1 or 7+** — downloads the server runtime, verifies its checksum, downloads a model from Hugging Face, generates a `serve.ps1` launcher and installs the OpenCode plugin that starts it automatically:
 
 ```powershell
 irm https://raw.githubusercontent.com/moesuito/opencode-parakeet/main/install.ps1 | iex
@@ -36,6 +36,7 @@ $s = irm https://raw.githubusercontent.com/moesuito/opencode-parakeet/main/insta
 | `-InstallDir <path>` | `%LOCALAPPDATA%\opencode-parakeet` | Where everything is installed |
 | `-Port <n>` | `8797` | Port used by the generated launcher |
 | `-Configure` | off | Adds the `voice` block to `~/.config/opencode/cli.json` and `opencode.json` (with backups) |
+| `-NoPlugin` | off | Skip installing the OpenCode plugin |
 | `-NoModel` / `-NoVerify` / `-Force` | — | Skip model download / skip checksums / reinstall |
 
 The installer verifies the server's SHA256 against `SHA256SUMS` and the model's SHA256 against the hash advertised by Hugging Face; the model download resumes if interrupted.
@@ -57,6 +58,25 @@ Voice input stays disabled until `voice.url` is set. Add this to:
 ```
 
 `apiKey` is only needed for cloud endpoints. Or just re-run the installer with `-Configure`.
+
+## Auto-start with OpenCode (plugin)
+
+The installer drops a small OpenCode plugin at `~/.config/opencode/plugins/opencode-parakeet.ts`. On every OpenCode boot the plugin:
+
+- probes `http://127.0.0.1:<port>` and does nothing if a server is already listening (no duplicates),
+- otherwise starts `parakeet-server` detached (no console window) with a model, so voice input is ready.
+
+Environment overrides (all optional):
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `OPENCODE_PARAKEET_DIR` | install dir | directory containing `parakeet-server` |
+| `OPENCODE_PARAKEET_PORT` | `8797` | port to check/start |
+| `OPENCODE_PARAKEET_MODEL` | `tdt-0.6b-v3-f16.gguf` | model file (absolute or relative to `DIR`) |
+| `OPENCODE_PARAKEET_DISABLE` | — | set to `1` to disable the plugin |
+| `OPENCODE_PARAKEET_LOG` | — | append plugin logs to a file |
+
+Manual setup: copy [`plugin/opencode-parakeet.ts`](./plugin/opencode-parakeet.ts) into `~/.config/opencode/plugins/` and adjust its `DEFAULTS` block.
 
 ## Run the server
 

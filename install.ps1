@@ -5,8 +5,9 @@
 .DESCRIPTION
   Downloads the Parakeet server runtime (parakeet.cpp builds mirrored in this
   repository's Releases) and a Parakeet TDT 0.6B v3 GGUF model (Hugging Face),
-  verifies checksums, generates a serve.ps1 launcher and optionally configures
-  OpenCode to use it.
+  verifies checksums, generates a serve.ps1 launcher, installs an OpenCode
+  plugin that starts the server automatically with OpenCode, and optionally
+  configures OpenCode to use it.
 
   Compatible with Windows PowerShell 5.1 and PowerShell 7+.
 
@@ -26,6 +27,7 @@ param(
   [string]$ConfigDir = "",
   [switch]$NoModel,
   [switch]$NoVerify,
+  [switch]$NoPlugin,
   [switch]$Configure,
   [switch]$Force
 )
@@ -61,6 +63,13 @@ function Get-RemoteFile([string]$Url, [string]$Dest, [switch]$Resume) {
   if ($Resume -and (Test-Path $Dest)) { Remove-Item -LiteralPath $Dest -Force }
   $ProgressPreference = "SilentlyContinue"
   Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing
+}
+
+function Get-RemoteText([string]$Url) {
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  if ($curl) { return ((& curl.exe -sL --fail --retry 3 $Url) -join "`n") }
+  $ProgressPreference = "SilentlyContinue"
+  return (Invoke-WebRequest -Uri $Url -UseBasicParsing).Content
 }
 
 function Get-Sha256([string]$Path) {
@@ -240,6 +249,25 @@ $servePath = Join-Path $InstallDir "serve.ps1"
 [IO.File]::WriteAllText($servePath, $serve, $utf8)
 Write-Ok "launcher ready: $servePath"
 
+if (-not $NoPlugin) {
+  # OpenCode plugin: starts the server automatically when OpenCode boots,
+  # unless one is already listening.
+  $pluginDir = Join-Path $ConfigDir "plugins"
+  $pluginPath = Join-Path $pluginDir "opencode-parakeet.ts"
+  New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
+  Write-Info "Installing the OpenCode plugin (auto-start on boot)"
+  $pluginSource = Get-RemoteText "https://raw.githubusercontent.com/moesuito/opencode-parakeet/main/plugin/opencode-parakeet.ts"
+  if (-not $pluginSource) {
+    Write-Warn "could not download the plugin; skipping (copy it manually from the repository)"
+  } else {
+    $pluginSource = $pluginSource.Replace('dir: "__PARAKEET_DIR__"', 'dir: "' + $InstallDir.Replace("\", "/") + '"')
+    $pluginSource = $pluginSource.Replace("port: 8797", "port: $Port")
+    $pluginSource = $pluginSource.Replace('model: "tdt-0.6b-v3-f16.gguf"', 'model: "' + $modelInfo.file + '"')
+    [IO.File]::WriteAllText($pluginPath, $pluginSource, $utf8)
+    Write-Ok "plugin installed: $pluginPath"
+  }
+}
+
 if ($Configure) {
   Write-Info "Updating OpenCode config (backups are created next to each file)"
   foreach ($target in @((Join-Path $ConfigDir "cli.json"), (Join-Path $ConfigDir "opencode.json"))) {
@@ -250,8 +278,13 @@ if ($Configure) {
 Write-Host ""
 Write-Host "All set. Next steps:" -ForegroundColor White
 Write-Host ""
-Write-Host "  1) Start the server:"
-Write-Host "       & `"$servePath`""
+if ($NoPlugin) {
+  Write-Host "  1) Start the server:"
+  Write-Host "       & `"$servePath`""
+} else {
+  Write-Host "  1) The server now starts automatically when OpenCode boots."
+  Write-Host "     To start it manually instead: & `"$servePath`""
+}
 Write-Host ""
 Write-Host "  2) Point OpenCode's voice input at it"
 if ($Configure) {
