@@ -186,32 +186,32 @@ if ($Force -or -not (Test-Path $serverExe)) {
   Write-Ok "server already installed (use -Force to reinstall)"
 }
 
-$model     = $ModelFiles[$Model]
-$modelPath = Join-Path $InstallDir $model.file
+$modelInfo = $ModelFiles[$Model]
+$modelPath = Join-Path $InstallDir $modelInfo.file
 
 if ($NoModel) {
-  Write-Warn "model download skipped (-NoModel). Add $($model.file) to the install directory later."
+  Write-Warn "model download skipped (-NoModel). Add $($modelInfo.file) to the install directory later."
 } else {
   $sizeOk = $false
   if ((Test-Path $modelPath) -and -not $Force) {
     $length = (Get-Item -LiteralPath $modelPath).Length
-    if ($length -eq $model.bytes) { $sizeOk = $true }
+    if ($length -eq $modelInfo.bytes) { $sizeOk = $true }
     elseif ($length -gt 0) { Write-Warn "partial model found, resuming download" }
   }
 
   if ($sizeOk) {
-    Write-Ok "model already present: $($model.file)"
+    Write-Ok "model already present: $($modelInfo.file)"
   } else {
-    $mb = [math]::Round($model.bytes / 1MB)
-    Write-Info "Downloading model: $($model.file) ($mb MB, from Hugging Face)"
-    Get-RemoteFile "$ModelBase/$($model.file)" $modelPath -Resume
+    $mb = [math]::Round($modelInfo.bytes / 1MB)
+    Write-Info "Downloading model: $($modelInfo.file) ($mb MB, from Hugging Face)"
+    Get-RemoteFile "$ModelBase/$($modelInfo.file)" $modelPath -Resume
 
     $length = (Get-Item -LiteralPath $modelPath).Length
-    if ($length -ne $model.bytes) { Fail "model size mismatch: got $length bytes, expected $($model.bytes)" }
+    if ($length -ne $modelInfo.bytes) { Fail "model size mismatch: got $length bytes, expected $($modelInfo.bytes)" }
     Write-Ok "size verified"
 
     if (-not $NoVerify) {
-      $remoteSha = Get-RemoteSha256 "$ModelBase/$($model.file)"
+      $remoteSha = Get-RemoteSha256 "$ModelBase/$($modelInfo.file)"
       if ($remoteSha) {
         Write-Info "Verifying model checksum (large file, this takes a moment)"
         if ((Get-Sha256 $modelPath) -ne $remoteSha) { Fail "model checksum mismatch" }
@@ -234,7 +234,7 @@ if (-not (Test-Path $model)) { Write-Error "model not found: $model"; exit 1 }
 Write-Host "Serving Parakeet on http://127.0.0.1:$Port (OpenAI-compatible /v1/audio/transcriptions)"
 & $server --model $model --port $Port
 '@
-$serve = $serveTemplate.Replace("__PORT__", [string]$Port).Replace("__MODEL__", $model.file)
+$serve = $serveTemplate.Replace("__PORT__", [string]$Port).Replace("__MODEL__", $modelInfo.file)
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $servePath = Join-Path $InstallDir "serve.ps1"
 [IO.File]::WriteAllText($servePath, $serve, $utf8)
