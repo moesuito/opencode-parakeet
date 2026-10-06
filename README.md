@@ -63,8 +63,8 @@ Voice input stays disabled until `voice.url` is set. Add this to:
 
 The installer drops a small OpenCode plugin at `~/.config/opencode/plugins/opencode-parakeet.ts`. On every OpenCode boot the plugin:
 
-- probes `http://127.0.0.1:<port>` and does nothing if a server is already listening (no duplicates),
-- otherwise starts `parakeet-server` detached (no console window) with a model, so voice input is ready.
+- keeps the model-less server running: probes `http://127.0.0.1:<port>` and starts `parakeet-server` detached (no console window) when needed — no duplicates,
+- pre-warms the model when a recording starts (listening for the `voice.recording` event), so the transcription right after the recording is instant; the server unloads the model again after each transcription.
 
 Environment overrides (all optional):
 
@@ -73,6 +73,7 @@ Environment overrides (all optional):
 | `OPENCODE_PARAKEET_DIR` | install dir | directory containing `parakeet-server` |
 | `OPENCODE_PARAKEET_PORT` | `8797` | port to check/start |
 | `OPENCODE_PARAKEET_MODEL` | `tdt-0.6b-v3-f16.gguf` | model file (absolute or relative to `DIR`) |
+| `OPENCODE_PARAKEET_EAGER` | — | set to `1` to load the model at server start instead of on demand |
 | `OPENCODE_PARAKEET_DISABLE` | — | set to `1` to disable the plugin |
 | `OPENCODE_PARAKEET_LOG` | — | append plugin logs to a file |
 
@@ -92,6 +93,18 @@ Or manually, with any [parakeet.cpp](https://github.com/mudler/parakeet.cpp/rele
 
 `serve.sh` in this repo wraps that for Linux/macOS.
 
+## Model loading & memory
+
+The server starts instantly without the model (~8 MB). The model loads on demand — `POST /warmup` (the plugin sends this when a recording starts) or the first transcription as a fallback — and unloads right after each transcription, so RAM is only used while dictating. A warmed model that never gets used is unloaded after an idle timeout (default 120 s).
+
+| Flag | Effect |
+| ---- | ------ |
+| `--preload` | load the model at startup (eager) |
+| `--keep-loaded` | never unload (no unload-after-request, no idle unload) |
+| `--idle-timeout N` | unload a warm model after N idle seconds (default 120, 0 disables) |
+
+`GET /health` reports `{"status":"ok","model_loaded":true|false}`.
+
 ## Use it
 
 - **TUI**: `Ctrl+Y` records, press again (or Enter) to stop and send; `Alt+Y` inserts the transcription without sending.
@@ -110,19 +123,20 @@ Recordings should be WAV (16 kHz mono recommended) — OpenCode's recorder alrea
 
 ## Releases
 
-This repository mirrors the latest [parakeet.cpp](https://github.com/mudler/parakeet.cpp) release **with binaries**, pinned and checksummed:
+Windows server builds based on [parakeet.cpp](https://github.com/mudler/parakeet.cpp) **v0.5.0** with the opencode-parakeet patches (lazy loading, `POST /warmup`, unload after request, idle timeout), pinned and checksummed:
 
-- `parakeet-server-win-x64-vulkan.zip` — GPU build (Vulkan)
-- `parakeet-server-win-x64-cpu.zip` — CPU-only build
+- `parakeet-server-win-x64-vulkan.zip` — GPU build (Vulkan) + plugin + installer + README
+- `parakeet-server-win-x64-cpu.zip` — CPU-only build (same contents)
+- `opencode-parakeet.ts` / `install.ps1` — plugin and installer as standalone assets
 - `SHA256SUMS`
 
-Both are byte-identical to the corresponding upstream assets (currently parakeet.cpp v0.5.0). Other platforms/backends (Linux, macOS, CUDA): grab them from the [upstream releases](https://github.com/mudler/parakeet.cpp/releases).
+Other platforms/backends (Linux, macOS, CUDA): use the [upstream releases](https://github.com/mudler/parakeet.cpp/releases).
 
 ## Troubleshooting
 
 - **Server exits immediately on the Vulkan build** — your GPU/driver may not support Vulkan. Re-run the installer with `-Backend cpu`.
 - **Port already in use** — pass another port to `serve.ps1` (`-Port 8798`) and update `voice.url`.
-- **First request is slow** — the model is loaded into memory on first use.
+- **First dictation after a while takes a couple of seconds** — the model is loading. The plugin pre-warms when you start recording; after the first load, reloads take under a second and transcriptions ~0.1 s.
 
 ## Notes
 
